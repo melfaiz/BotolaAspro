@@ -58,7 +58,7 @@ df_teams = df_teams.reset_index()
 
 df_teams.season = df_teams.season.apply(lambda x: x[-4:])
 
-teams_columns_=['common_name','season','shots_on_target','goals_scored_per_match','home_advantage_percentage','points_per_game','goals_scored','average_possession','clean_sheet_percentage','leading_at_half_time_percentage','draw_at_half_time','draws_home','draws_away','losing_at_half_time_percentage','draws']
+teams_columns_=['common_name','season','shots_on_target','goals_scored_per_match','home_advantage_percentage','points_per_game','goals_scored','average_possession','clean_sheet_percentage','leading_at_half_time_percentage','draw_at_half_time','draws_home','draws_away','losing_at_half_time_percentage','wins_away','losses_away','leading_at_half_time_away','goals_conceded_per_match_half_time_away','win_percentage_away','draws']
 df_teams = df_teams[teams_columns_]
 
 data2 = pd.merge(data, df_teams,  how='left', left_on=['season','home_team_name'], right_on = ['season','common_name'])
@@ -67,8 +67,8 @@ data2 = pd.merge(data2, df_teams, suffixes = ('_home', '_away'), how='left', lef
 data = data2
 
 # %%
-
-data.head()
+for column in data.columns:
+    print(column)
 
 # %% [markdown]
 # Different teams that played in the selected years
@@ -130,6 +130,9 @@ data['away_wins'] = data.apply(away_wins,axis=1)
 data['draw_teams']=data.apply(draw_teams,axis=1)
 
 # %%
+def get_duplicate_cols(df: pd.DataFrame) -> pd.Series:
+    return pd.Series(df.columns).value_counts()[lambda x: x>1]
+# %%
 
 data['home_last_5'] = 0
 data['away_last_5'] = 0
@@ -138,8 +141,6 @@ for i in range(len(data)):
     a = last_matches(data.iloc[i].date_GMT,data.iloc[i].away_team_name,10)
     data.at[i,'home_last_5'] = h
     data.at[i,'away_last_5'] = a
-
-
 # %%
 data['home_last_all'] = 0
 data['away_last_all'] = 0
@@ -168,7 +169,9 @@ for i in range(len(data)):
 # plt.show()
 
 # data.result.value_counts()
-
+# %%
+for column in data.columns:
+    print(column)
 
 # %%
 columns = [
@@ -196,8 +199,19 @@ columns = [
 'draws_away_away',
 'draws_away',
 'draws_home',
+'wins_away_home',
+'losses_away_home',
+'leading_at_half_time_away_home',
+'goals_conceded_per_match_half_time_away_home',
+'win_percentage_away_home',
+'wins_away_away',
+'losses_away_away',
+'leading_at_half_time_away_away',
+'goals_conceded_per_match_half_time_away_away',
+'win_percentage_away_away',
 'result'
 ]
+print(get_duplicate_cols(data))
 
 data_learning = data[data.status == 'complete']
 data_learning = data_learning[columns]
@@ -285,7 +299,7 @@ from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 
 
-clf_decision_tree = tree.DecisionTreeClassifier(max_depth=7)
+clf_decision_tree = tree.DecisionTreeClassifier(max_depth=6)
 
 clf_decision_tree.fit(X_train, y_train)
 
@@ -336,3 +350,51 @@ model = SelectFromModel(clf_decision_tree, prefit=True)
 X_new = model.transform(X)
 X_new.shape   
 # %%
+to_predict=data[(data.status == 'incomplete') | (data.status=="suspended")]
+columns_predict= [
+'home_wins',
+'away_wins',
+'home_last_5',
+'away_last_5',
+'home_last_all',
+'away_last_all',
+'shots_on_target_home', 'goals_scored_per_match_home',
+'home_advantage_percentage_home', 'points_per_game_home',
+'goals_scored_home', 'average_possession_home',
+'clean_sheet_percentage_home', 'leading_at_half_time_percentage_home',
+'draw_at_half_time_home', 'shots_on_target_away',
+'goals_scored_per_match_away', 'home_advantage_percentage_away',
+'points_per_game_away', 'goals_scored_away', 'average_possession_away',
+'clean_sheet_percentage_away', 'leading_at_half_time_percentage_away',
+'draw_at_half_time_away',
+'draw_teams',
+'losing_at_half_time_percentage_home',
+'losing_at_half_time_percentage_away',
+'draws_home_home',
+'draws_home_away',
+'draws_away_home',
+'draws_away_away',
+'draws_away',
+'draws_home',
+'wins_away_home',
+'losses_away_home',
+'leading_at_half_time_away_home',
+'goals_conceded_per_match_half_time_away_home',
+'win_percentage_away_home',
+'wins_away_away',
+'losses_away_away',
+'leading_at_half_time_away_away',
+'goals_conceded_per_match_half_time_away_away',
+'win_percentage_away_away','home_team_name','away_team_name'
+]
+to_predict=to_predict[columns_predict]
+def predict(away_team_name,home_team_name,to_predict,model):
+    for index, row in to_predict.iterrows():
+        if ((row['home_team_name']==home_team_name) & (row['away_team_name']==away_team_name)):
+            #predict
+            prediction = model.predict([row[:-2]])
+            #probabilities
+            probs = model.predict_proba([row[:-2]])
+            return prediction,probs
+    return " No game "
+print(predict("Difaâ El Jadida","Raja Casablanca",to_predict,clf_decision_tree))
