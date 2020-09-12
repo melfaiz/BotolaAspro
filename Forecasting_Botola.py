@@ -31,19 +31,41 @@ for filename in os.listdir(data_path):
     if data_type in filename:
         if filename[-14:-10] in str(data_years):
             df = pd.read_csv(file_path)
+            df['season'] = filename[-14:-10]
             data_selected.append(df)
 
+# %%
+
+data_teams = "morocco-botola-pro-teams"
+data_teams_selected = []
+for filename in os.listdir(data_path):
+    file_path = data_path + filename
+    if data_teams in filename:
+        if filename[-14:-10] in str(data_years):
+            df = pd.read_csv(file_path)
+            data_teams_selected.append(df)
 # %% [markdown]
 # Concatenate and explore data over years
 
 # %%
 data = pd.concat(data_selected)
-
-
-
 data.date_GMT = pd.to_datetime(data.date_GMT,format='%b %d %Y - %I:%M%p',errors='coerce')
-
 data = data.reset_index()
+
+
+df_teams = pd.concat(data_teams_selected)
+df_teams = df_teams.reset_index()
+
+df_teams.season = df_teams.season.apply(lambda x: x[-4:])
+
+teams_columns_=['common_name','season','shots_on_target','goals_scored_per_match','home_advantage_percentage','points_per_game','goals_scored','average_possession','clean_sheet_percentage','leading_at_half_time_percentage','draw_at_half_time','draws_home','draws_away','losing_at_half_time_percentage','draws']
+df_teams = df_teams[teams_columns_]
+
+data2 = pd.merge(data, df_teams,  how='left', left_on=['season','home_team_name'], right_on = ['season','common_name'])
+data2 = pd.merge(data2, df_teams, suffixes = ('_home', '_away'), how='left', left_on=['season','away_team_name'], right_on = ['season','common_name'])
+
+data = data2
+
 # %%
 
 data.head()
@@ -98,13 +120,14 @@ def last_matches(date,team,n):
     df = data[ ((data.home_team_name == team) | (data.away_team_name == team)) & (data.date_GMT < date) & (data.status == 'complete') ][-n:]
     return len( df[ (df.home_team_name == team) & (df.result == 1) ] ) + len( df[ (df.away_team_name == team) & (df.result == 2) ] ) 
     
-
+def draw_teams(row):
+        return len( data[(data.result==0) & ((data.home_team_name==row.home_team_name) & (data.away_team_name==row.away_team_name))])+len( data[(data.result==0) & ((data.home_team_name==row.away_team_name) & (data.away_team_name==data.home_team_name))])
 
 
 data['result'] = data.apply(result,axis=1)
 data['home_wins'] = data.apply(home_wins,axis=1)
 data['away_wins'] = data.apply(away_wins,axis=1)
-
+data['draw_teams']=data.apply(draw_teams,axis=1)
 
 # %%
 
@@ -148,7 +171,33 @@ for i in range(len(data)):
 
 
 # %%
-columns = ['Pre-Match PPG (Home)','Pre-Match PPG (Away)','home_wins','away_wins','home_last_5','away_last_5','home_last_all','away_last_all','result']
+columns = [
+'home_wins',
+'away_wins',
+'home_last_5',
+'away_last_5',
+'home_last_all',
+'away_last_all',
+'shots_on_target_home', 'goals_scored_per_match_home',
+'home_advantage_percentage_home', 'points_per_game_home',
+'goals_scored_home', 'average_possession_home',
+'clean_sheet_percentage_home', 'leading_at_half_time_percentage_home',
+'draw_at_half_time_home', 'shots_on_target_away',
+'goals_scored_per_match_away', 'home_advantage_percentage_away',
+'points_per_game_away', 'goals_scored_away', 'average_possession_away',
+'clean_sheet_percentage_away', 'leading_at_half_time_percentage_away',
+'draw_at_half_time_away',
+'draw_teams',
+'losing_at_half_time_percentage_home',
+'losing_at_half_time_percentage_away',
+'draws_home_home',
+'draws_home_away',
+'draws_away_home',
+'draws_away_away',
+'draws_away',
+'draws_home',
+'result'
+]
 
 data_learning = data[data.status == 'complete']
 data_learning = data_learning[columns]
@@ -230,77 +279,13 @@ X_train, X_test, y_train, y_test = train_test_split(X, y,
 
 # %%
 
-#for measuring training time
-from time import time 
-# F1 score (also F-score or F-measure) is a measure of a test's accuracy. 
-#It considers both the precision p and the recall r of the test to compute 
-#the score: p is the number of correct positive results divided by the number of 
-#all positive results, and r is the number of correct positive results divided by 
-#the number of positive results that should have been returned. The F1 score can be 
-#interpreted as a weighted average of the precision and recall, where an F1 score 
-#reaches its best value at 1 and worst at 0.
-from sklearn.metrics import f1_score
-
-def train_classifier(clf, X_train, y_train):
-    ''' Fits a classifier to the training data. '''
-    
-    # Start the clock, train the classifier, then stop the clock
-    start = time()
-    clf.fit(X_train, y_train)
-    end = time()
-    
-    # Print the results
-    print ("Trained model in {:.4f} seconds".format(end - start))
-
-    
-def predict_labels(clf, features, target):
-    ''' Makes predictions using a fit classifier based on F1 score. '''
-    
-    # Start the clock, make predictions, then stop the clock
-    start = time()
-    y_pred = clf.predict(features)
-    
-    end = time()
-    # Print and return results
-    print ("Made predictions in {:.4f} seconds.".format(end - start))
-    
-    return f1_score(target, y_pred, pos_label='1',average='micro'), sum(target == y_pred) / float(len(y_pred))
-
-
-def train_predict(clf, X_train, y_train, X_test, y_test):
-    ''' Train and predict using a classifer based on F1 score. '''
-    
-    # Indicate the classifier and the training set size
-    print ("Training a {} using a training set size of {}. . .".format(clf.__class__.__name__, len(X_train)))
-    
-    # Train the classifier
-    train_classifier(clf, X_train, y_train)
-    
-    # Print the results of prediction for both training and testing
-    f1, acc = predict_labels(clf, X_train, y_train)
-    print ("F1 score and accuracy score for training set: {:.4f} , {:.4f}.".format(f1 , acc))
-    
-    f1, acc = predict_labels(clf, X_test, y_test)
-    print ("F1 score and accuracy score for test set: {:.4f} , {:.4f}.".format(f1 , acc))
-
-    y_pred = clf.predict(X_test)
-
-    figure = plt.figure(figsize=(8, 8))
-    sns.heatmap(confusion_matrix(y_test,y_pred), annot=True,cmap=plt.cm.Blues)
-    plt.tight_layout()
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-    plt.show()
-
-
-# %%
 
 from sklearn import tree
 from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 
 
-clf_decision_tree = tree.DecisionTreeClassifier(max_depth=4)
+clf_decision_tree = tree.DecisionTreeClassifier(max_depth=7)
 
 clf_decision_tree.fit(X_train, y_train)
 
@@ -334,9 +319,20 @@ plt.show()
 # DECISION TREE PLOT
 
 fig = plt.figure(figsize=(25,20))
-_ = tree.plot_tree(clf_D, 
+_ = tree.plot_tree(clf_decision_tree, 
                 feature_names=X.columns,  
                 class_names=['draw','home','away'],
                 filled=True)
 
+# %%
+
+from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.datasets import load_iris
+from sklearn.feature_selection import SelectFromModel
+
+clf_decision_tree.feature_importances_  
+
+model = SelectFromModel(clf_decision_tree, prefit=True)
+X_new = model.transform(X)
+X_new.shape   
 # %%
